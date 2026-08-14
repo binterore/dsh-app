@@ -10,16 +10,20 @@ echo "==> 清理旧构建产物"
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
-echo "==> 编译 Swift 主程序"
-swiftc -O Sources/main.swift -o "$BUILD_DIR/$APP_NAME"
+echo "==> 编译 Swift 主程序（兼容 macOS 13.0+）"
+swiftc -O -target arm64-apple-macosx13.0 Sources/main.swift -o "$BUILD_DIR/$APP_NAME"
 
-echo "==> 生成图标（多尺寸 iconset → icns）"
+echo "==> 生成图标（裁掉透明留白，多尺寸 iconset → icns）"
 ICONSET="$BUILD_DIR/AppIcon.iconset"
+ICON_SOURCE="$BUILD_DIR/AppIcon-source.png"
 mkdir -p "$ICONSET"
+# 原图主体仅占 880×649 px；先把 1024 px 透明画布居中裁成 880 px，
+# 避免 macOS 再按整张画布缩放后，Dock 中的鲸鱼明显小于相邻图标。
+sips -c 880 880 Assets/whale.png --out "$ICON_SOURCE" >/dev/null
 for s in 16 32 128 256 512; do
-    sips -z $s $s Assets/whale.png --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
+    sips -z $s $s "$ICON_SOURCE" --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
     s2=$((s * 2))
-    sips -z $s2 $s2 Assets/whale.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
+    sips -z $s2 $s2 "$ICON_SOURCE" --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
 done
 iconutil -c icns "$ICONSET" -o "$BUILD_DIR/AppIcon.icns"
 

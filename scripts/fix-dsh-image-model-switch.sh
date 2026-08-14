@@ -7,7 +7,8 @@ Usage: fix-dsh-image-model-switch.sh [OPTIONS]
 
 Patch DSH so sessions with historical images can switch to text-only models.
 Historical image blocks are flattened to text placeholders on text-only model
-requests instead of being sent upstream as image_url payloads.
+requests instead of being sent upstream as image_url payloads or rejected by
+text-only adapters.
 
 Options:
   --dsh-root PATH  Use the specified DSH installation root
@@ -68,10 +69,13 @@ if [[ -z "$dsh_root" ]]; then
 fi
 
 dsh_root=${dsh_root%/}
-llm_file="$dsh_root/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js"
-api_file="$dsh_root/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js"
-api_types_file="$dsh_root/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api-proxy.js"
-files=("$llm_file" "$api_file" "$api_types_file")
+files=(
+  "$dsh_root/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js"
+  "$dsh_root/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/index.js"
+  "$dsh_root/node_modules/@deepseek-ai/dsh-host-apiproxy/lib/types/api-proxy.js"
+  "$dsh_root/node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js"
+)
+kinds=(piAi apiProxy apiProxyTypes deepseek)
 
 echo "DSH root: $dsh_root"
 
@@ -82,95 +86,119 @@ for file in "${files[@]}"; do
   fi
 done
 
-state_of() {
-  local file=$1
-  local kind=$2
-  KIND="$kind" node - "$file" <<'NODE'
-const fs = require('fs');
-const file = process.argv[2];
+node_patch='const fs = require("fs");
+const file = process.argv[1];
 const kind = process.env.KIND;
-const text = fs.readFileSync(file, 'utf8');
-const count = (needle) => text.split(needle).length - 1;
+const mode = process.env.MODE;
+let text = fs.readFileSync(file, "utf8");
 
-const shapes = {
-  llm: {
-    old: '\t\tif (contentHasImage(message.content)) throw new LlmError("pi-ai image conversion requires the durable attachment service", "UNSUPPORTED_CONTENT");\n\t\tif (message.role === "system") {',
-    new: '\t\tif (message.role === "system") {',
-    verify() {
-      return count(this.old) === 0 && count(this.new) >= 1;
+const patches = {
+  piAi: {
+    oldMarkers: ["pi-ai image conversion requires the durable attachment service"],
+    verify: (value) => !value.includes("pi-ai image conversion requires the durable attachment service"),
+    apply(value) {
+      return value.replace(
+        "\t\tif (contentHasImage(message.content)) throw new LlmError(\"pi-ai image conversion requires the durable attachment service\", \"UNSUPPORTED_CONTENT\");\n\t\tif (message.role === \"system\") {",
+        "\t\tif (message.role === \"system\") {"
+      );
     },
   },
-  api: {
-    old: '\t\t\t\t\t\tif ([...found.agent.inbox.nextTurn, ...found.agent.inbox.nextStep].some((message) => contentHasImage(message.content)) || messagesHaveImage(found.agent.session.deriveMessages())) {\n\t\t\t\t\t\t\tconst info = await ctx.llm.resolveModelInfo(resolved.provider, resolved.model);\n\t\t\t\t\t\t\tif (info.inputModalities !== void 0 && !info.inputModalities.includes("image")) return err(request, {\n\t\t\t\t\t\t\t\tcode: "model-unavailable",\n\t\t\t\t\t\t\t\tmessage: `Model "${resolved.model}" does not accept image input, but this session already contains images; select an image-capable model.`,\n\t\t\t\t\t\t\t\tdetails: {\n\t\t\t\t\t\t\t\t\tprovider,\n\t\t\t\t\t\t\t\t\tmodel\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n',
-    new: '',
-    verify() {
-      return !text.includes('session already contains images') && !text.includes('messagesHaveImage') && !text.includes('contentHasImage');
+  apiProxy: {
+    oldMarkers: ["session already contains images", "messagesHaveImage", "contentHasImage"],
+    verify: (value) => !value.includes("session already contains images") && !value.includes("messagesHaveImage") && !value.includes("contentHasImage"),
+    apply(value) {
+      value = value.replace(
+        "\t\t\t\t\t\tif ([...found.agent.inbox.nextTurn, ...found.agent.inbox.nextStep].some((message) => contentHasImage(message.content)) || messagesHaveImage(found.agent.session.deriveMessages())) {\n\t\t\t\t\t\t\tconst info = await ctx.llm.resolveModelInfo(resolved.provider, resolved.model);\n\t\t\t\t\t\t\tif (info.inputModalities !== void 0 && !info.inputModalities.includes(\"image\")) return err(request, {\n\t\t\t\t\t\t\t\tcode: \"model-unavailable\",\n\t\t\t\t\t\t\t\tmessage: `Model \"${resolved.model}\" does not accept image input, but this session already contains images; select an image-capable model.`,\n\t\t\t\t\t\t\t\tdetails: {\n\t\t\t\t\t\t\t\t\tprovider,\n\t\t\t\t\t\t\t\t\tmodel\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n",
+        ""
+      );
+      value = value.replace(
+        "import { ReasoningEffortId, contentHasImage, createUserMessage, errorChain, freezeMessage } from \"@deepseek-ai/dsh-llm\";",
+        "import { ReasoningEffortId, createUserMessage, errorChain, freezeMessage } from \"@deepseek-ai/dsh-llm\";"
+      );
+      value = value.replace(
+        "/** True when the current model-visible surface contains an image. */\nfunction messagesHaveImage(messages) {\n\treturn messages.some((message) => contentHasImage(message.content));\n}\n",
+        ""
+      );
+      return value;
     },
   },
-  apiTypes: {
-    old: '                        const pendingImage = [...found.agent.inbox.nextTurn, ...found.agent.inbox.nextStep]\n                            .some(message => contentHasImage(message.content));\n                        if (pendingImage || messagesHaveImage(found.agent.session.deriveMessages())) {\n                            const info = await ctx.llm.resolveModelInfo(resolved.provider, resolved.model);\n                            if (info.inputModalities !== undefined && !info.inputModalities.includes(\'image\')) {\n                                return err(request, {\n                                    code: \'model-unavailable\',\n                                    message: `Model "${resolved.model}" does not accept image input, but this session already contains images; select an image-capable model.`,\n                                    details: { provider, model },\n                                });\n                            }\n                        }\n',
-    new: '',
-    verify() {
-      return !text.includes('session already contains images') && !text.includes('messagesHaveImage') && !text.includes('contentHasImage');
+  apiProxyTypes: {
+    oldMarkers: ["session already contains images", "messagesHaveImage", "contentHasImage"],
+    verify: (value) => !value.includes("session already contains images") && !value.includes("messagesHaveImage") && !value.includes("contentHasImage"),
+    apply(value) {
+      value = value.replace(
+        "                        const pendingImage = [...found.agent.inbox.nextTurn, ...found.agent.inbox.nextStep]\n                            .some(message => contentHasImage(message.content));\n                        if (pendingImage || messagesHaveImage(found.agent.session.deriveMessages())) {\n                            const info = await ctx.llm.resolveModelInfo(resolved.provider, resolved.model);\n                            if (info.inputModalities !== undefined && !info.inputModalities.includes('image')) {\n                                return err(request, {\n                                    code: 'model-unavailable',\n                                    message: `Model \"${resolved.model}\" does not accept image input, but this session already contains images; select an image-capable model.`,\n                                    details: { provider, model },\n                                });\n                            }\n                        }\n",
+        ""
+      );
+      value = value.replace(
+        "import { contentHasImage, createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm';",
+        "import { createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm';"
+      );
+      value = value.replace(
+        "/** True when the current model-visible surface contains an image. */\nfunction messagesHaveImage(messages) {\n    return messages.some(message => contentHasImage(message.content));\n}\n",
+        ""
+      );
+      return value;
+    },
+  },
+  deepseek: {
+    oldMarkers: ["does not support image content", "assertTextOnly", "contentHasImage"],
+    verify: (value) => value.includes("Image omitted for text-only model") && !value.includes("does not support image content") && !value.includes("assertTextOnly") && !value.includes("contentHasImage"),
+    apply(value) {
+      value = value.replace(
+        "import { CONTEXT_WINDOW_EXCEEDED_CODE, CallId, EMPTY_RESPONSE_CODE, LlmAdapter, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId, RetryPolicySchema, assertUsableApiKey, attributionHeaders, contentHasImage, isContextWindowExceededError, isQuotaExceededError, resolveRetryPolicy } from \"@deepseek-ai/dsh-llm\";",
+        "import { CONTEXT_WINDOW_EXCEEDED_CODE, CallId, EMPTY_RESPONSE_CODE, LlmAdapter, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId, RetryPolicySchema, assertUsableApiKey, attributionHeaders, isContextWindowExceededError, isQuotaExceededError, resolveRetryPolicy } from \"@deepseek-ai/dsh-llm\";"
+      );
+      value = value.replace(
+        "/** Join the text blocks of a message (used for user/tool-result content). */\nfunction flattenText(blocks) {\n\treturn blocks.filter((block) => block.type === \"text\").map((block) => block.text).join(\"\");\n}\n/** Reject core image content before any text-flattening path can silently erase it. */\nfunction assertTextOnly(blocks) {\n\tif (contentHasImage(blocks)) throw new LlmError(\"The DeepSeek chat-completions adapter does not support image content.\", \"UNSUPPORTED_CONTENT\");\n}\n",
+        "/** Describe an image when the selected model cannot receive image bytes. */\nfunction imageText(block) {\n\tconst image = block.attachment;\n\tconst name = image.name === void 0 ? \"image\" : image.name;\n\treturn `[Image omitted for text-only model: ${name}, ${image.mediaType}, ${image.width}x${image.height}px, ${image.bytes} bytes]`;\n}\n/** Join model-visible text, preserving images as textual placeholders. */\nfunction flattenText(blocks) {\n\treturn blocks.map((block) => {\n\t\tswitch (block.type) {\n\t\t\tcase \"text\": return block.text;\n\t\t\tcase \"image\": return imageText(block);\n\t\t\tcase \"tool-result\": return flattenText(block.content);\n\t\t\tdefault: return \"\";\n\t\t}\n\t}).join(\"\");\n}\n"
+      );
+      value = value.replace("\t\tassertTextOnly(message.content);\n\t\tif (message.role === \"system\") {", "\t\tif (message.role === \"system\") {");
+      return value;
     },
   },
 };
 
-const shape = shapes[kind];
-if (!shape) throw new Error(`unknown kind: ${kind}`);
-const oldCount = shape.old.length === 0 ? 0 : count(shape.old);
-const patched = shape.verify();
-if (oldCount === 1 && !patched) process.stdout.write('unpatched');
-else if (patched) process.stdout.write('patched');
-else {
-  console.error(`error: unexpected source shape in ${file} for ${kind} (old=${oldCount})`);
-  process.exit(1);
+const patch = patches[kind];
+if (!patch) {
+  console.error(`error: unknown patch kind: ${kind}`);
+  process.exit(2);
 }
-NODE
+
+if (mode === "state") {
+  if (patch.verify(text)) {
+    process.stdout.write("patched");
+  } else if (patch.oldMarkers.some((marker) => text.includes(marker))) {
+    process.stdout.write("unpatched");
+  } else {
+    console.error(`error: unexpected source shape in ${file} for ${kind}`);
+    process.exit(1);
+  }
+} else if (mode === "patch") {
+  text = patch.apply(text);
+  fs.writeFileSync(file, text);
+  if (!patch.verify(text)) {
+    console.error(`error: patch did not reach expected state in ${file} for ${kind}`);
+    process.exit(1);
+  }
+} else {
+  console.error(`error: unknown mode: ${mode}`);
+  process.exit(2);
+}
+'
+
+state_of() {
+  local file=$1
+  local kind=$2
+  MODE=state KIND="$kind" node -e "$node_patch" "$file"
 }
 
 patch_file() {
   local file=$1
   local kind=$2
-  KIND="$kind" node - "$file" <<'NODE'
-const fs = require('fs');
-const file = process.argv[2];
-const kind = process.env.KIND;
-let text = fs.readFileSync(file, 'utf8');
-
-const replacements = {
-  llm: [
-    [
-      '\t\tif (contentHasImage(message.content)) throw new LlmError("pi-ai image conversion requires the durable attachment service", "UNSUPPORTED_CONTENT");\n\t\tif (message.role === "system") {',
-      '\t\tif (message.role === "system") {'
-    ],
-  ],
-  api: [
-    [
-      '\t\t\t\t\t\tif ([...found.agent.inbox.nextTurn, ...found.agent.inbox.nextStep].some((message) => contentHasImage(message.content)) || messagesHaveImage(found.agent.session.deriveMessages())) {\n\t\t\t\t\t\t\tconst info = await ctx.llm.resolveModelInfo(resolved.provider, resolved.model);\n\t\t\t\t\t\t\tif (info.inputModalities !== void 0 && !info.inputModalities.includes("image")) return err(request, {\n\t\t\t\t\t\t\t\tcode: "model-unavailable",\n\t\t\t\t\t\t\t\tmessage: `Model "${resolved.model}" does not accept image input, but this session already contains images; select an image-capable model.`,\n\t\t\t\t\t\t\t\tdetails: {\n\t\t\t\t\t\t\t\t\tprovider,\n\t\t\t\t\t\t\t\t\tmodel\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n',
-      ''
-    ],
-    ['import { ReasoningEffortId, contentHasImage, createUserMessage, errorChain, freezeMessage } from "@deepseek-ai/dsh-llm";', 'import { ReasoningEffortId, createUserMessage, errorChain, freezeMessage } from "@deepseek-ai/dsh-llm";'],
-    ['/** True when the current model-visible surface contains an image. */\nfunction messagesHaveImage(messages) {\n\treturn messages.some((message) => contentHasImage(message.content));\n}\n', ''],
-  ],
-  apiTypes: [
-    [
-      '                        const pendingImage = [...found.agent.inbox.nextTurn, ...found.agent.inbox.nextStep]\n                            .some(message => contentHasImage(message.content));\n                        if (pendingImage || messagesHaveImage(found.agent.session.deriveMessages())) {\n                            const info = await ctx.llm.resolveModelInfo(resolved.provider, resolved.model);\n                            if (info.inputModalities !== undefined && !info.inputModalities.includes(\'image\')) {\n                                return err(request, {\n                                    code: \'model-unavailable\',\n                                    message: `Model "${resolved.model}" does not accept image input, but this session already contains images; select an image-capable model.`,\n                                    details: { provider, model },\n                                });\n                            }\n                        }\n',
-      ''
-    ],
-    ["import { contentHasImage, createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm';", "import { createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm';"],
-    ['/** True when the current model-visible surface contains an image. */\nfunction messagesHaveImage(messages) {\n    return messages.some(message => contentHasImage(message.content));\n}\n', ''],
-  ],
-};
-
-for (const [oldText, newText] of replacements[kind] ?? []) {
-  if (text.includes(oldText)) text = text.replace(oldText, newText);
-}
-fs.writeFileSync(file, text);
-NODE
+  MODE=patch KIND="$kind" node -e "$node_patch" "$file"
 }
 
-kinds=(llm api apiTypes)
 unpatched=()
 for i in "${!files[@]}"; do
   state=$(state_of "${files[$i]}" "${kinds[$i]}")

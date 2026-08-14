@@ -136,17 +136,25 @@ final class WindowDragView: NSView {
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
+    private var statusItem: NSStatusItem?
     private var loadTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ensureServerRunning()
         buildMenu()
         buildWindow()
+        buildStatusItem()
         startLoading()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // 关闭窗口即退出（服务仍在后台运行）
+        // Keep the menu-bar entry alive so the main window can be reopened.
+        return false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication,
+                                       hasVisibleWindows flag: Bool) -> Bool {
+        showMainWindow(nil)
         return true
     }
 
@@ -203,6 +211,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         window.contentView = contentView
         window.makeKeyAndOrderFront(nil)
 
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func buildStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        if let button = item.button {
+            let icon = NSImage(named: NSImage.Name("AppIcon"))
+            icon?.size = NSSize(width: 18, height: 18)
+            icon?.isTemplate = true
+            button.image = icon
+            button.imagePosition = .imageOnly
+            button.toolTip = "DeepSeek"
+        }
+
+        let menu = NSMenu()
+        let openItem = NSMenuItem(
+            title: "打开 DeepSeek",
+            action: #selector(showMainWindow(_:)),
+            keyEquivalent: ""
+        )
+        openItem.target = self
+        menu.addItem(openItem)
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "退出 DeepSeek",
+                     action: #selector(NSApplication.terminate(_:)),
+                     keyEquivalent: "q")
+        item.menu = menu
+        statusItem = item
+    }
+
+    @objc private func showMainWindow(_ sender: Any?) {
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 

@@ -11,7 +11,7 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
 echo "==> 编译 Swift 主程序（兼容 macOS 13.0+）"
-swiftc -O -target arm64-apple-macosx13.0 Sources/main.swift -o "$BUILD_DIR/$APP_NAME"
+swiftc -O -target arm64-apple-macosx13.0 Sources/*.swift -o "$BUILD_DIR/$APP_NAME"
 
 echo "==> 生成图标（裁掉透明留白，多尺寸 iconset → icns）"
 ICONSET="$BUILD_DIR/AppIcon.iconset"

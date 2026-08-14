@@ -122,6 +122,17 @@ func ensureServerRunning() {
 
 // MARK: - App
 
+/// Reserves the same top strip Codex uses as a native window drag handle.
+/// WKWebView consumes mouse events itself, so a transparent AppKit view is
+/// required for reliable dragging when the title bar is visually hidden.
+final class WindowDragView: NSView {
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
@@ -143,13 +154,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()  // 持久化 cookie/localStorage
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
+        config.userContentController.addUserScript(
+            WKUserScript(
+                source: makeCodexThemeInjectionScript(),
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+        )
 
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
 
-        let rect = NSRect(x: 0, y: 0, width: 1200, height: 820)
+        let rect = NSRect(x: 0, y: 0, width: 1280, height: 820)
         window = NSWindow(
             contentRect: rect,
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -157,10 +175,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             defer: false
         )
         window.title = "DeepSeek"
-        window.titlebarAppearsTransparent = false
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.backgroundColor = NSColor(calibratedWhite: 0.965, alpha: 1)
         window.center()
-        window.minSize = NSSize(width: 720, height: 520)
-        window.contentView = webView
+        window.minSize = NSSize(width: 480, height: 600)
+
+        let contentView = NSView(frame: .zero)
+        let dragView = WindowDragView(frame: .zero)
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        dragView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(webView)
+        contentView.addSubview(dragView)
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            dragView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            dragView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            dragView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            // Keep only the very top edge draggable so the compact web toolbar
+            // immediately below it remains fully interactive.
+            dragView.heightAnchor.constraint(equalToConstant: 12)
+        ])
+        window.contentView = contentView
         window.makeKeyAndOrderFront(nil)
 
         NSApp.activate(ignoringOtherApps: true)

@@ -391,7 +391,13 @@ header[class*="_header"] {
 }
 
 header[class*="_header"]::after {
+  bottom: 0 !important;
   background: transparent !important;
+}
+
+[class*="_root"][data-phase="active"]
+  header[class*="_header"]::after {
+  background: var(--codex-border-subtle) !important;
 }
 
 header[class*="_header"] [role="tablist"] {

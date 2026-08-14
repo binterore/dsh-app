@@ -137,6 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private var window: NSWindow!
     private var webView: WKWebView!
     private var statusItem: NSStatusItem?
+    private var statusMenu: NSMenu?
     private var loadTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -186,6 +187,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
+        // The status-bar menu reuses this window after it has been closed.
+        // AppKit otherwise releases the native window and leaves the retained
+        // Swift reference pointing at a deallocated Objective-C object.
+        window.isReleasedWhenClosed = false
         window.backgroundColor = NSColor(calibratedWhite: 0.965, alpha: 1)
         window.center()
         window.minSize = NSSize(width: 480, height: 600)
@@ -223,22 +228,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             button.image = icon
             button.imagePosition = .imageOnly
             button.toolTip = "DeepSeek"
+            button.target = self
+            button.action = #selector(handleStatusItemClick(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
 
         let menu = NSMenu()
-        let openItem = NSMenuItem(
-            title: "打开 DeepSeek",
+        let showItem = NSMenuItem(
+            title: "显示 DeepSeek",
             action: #selector(showMainWindow(_:)),
             keyEquivalent: ""
         )
-        openItem.target = self
-        menu.addItem(openItem)
+        showItem.target = self
+        showItem.image = nil
+        menu.addItem(showItem)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "退出 DeepSeek",
-                     action: #selector(NSApplication.terminate(_:)),
-                     keyEquivalent: "q")
-        item.menu = menu
+
+        let quitItem = NSMenuItem(
+            title: "退出",
+            action: #selector(quitFromStatusItem(_:)),
+            keyEquivalent: ""
+        )
+        quitItem.target = self
+        quitItem.image = nil
+        menu.addItem(quitItem)
+        statusMenu = menu
         statusItem = item
+    }
+
+    @objc private func handleStatusItemClick(_ sender: NSStatusBarButton) {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            guard let statusItem, let statusMenu else { return }
+            // Let AppKit position the menu from the real status-item anchor.
+            // Manual NSMenu coordinates place the popup to the icon's left.
+            statusItem.menu = statusMenu
+            statusItem.button?.performClick(nil)
+            statusItem.menu = nil
+            return
+        }
+        showMainWindow(sender)
+    }
+
+    @objc private func quitFromStatusItem(_ sender: Any?) {
+        NSApp.terminate(sender)
     }
 
     @objc private func showMainWindow(_ sender: Any?) {

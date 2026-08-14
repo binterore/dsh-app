@@ -237,6 +237,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         editMenu.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editMenuItem.submenu = editMenu
 
+        let viewMenuItem = NSMenuItem()
+        mainMenu.addItem(viewMenuItem)
+        let viewMenu = NSMenu(title: "显示")
+        let toggleSidebarItem = NSMenuItem(
+            title: "切换侧边栏",
+            action: #selector(toggleSidebar(_:)),
+            keyEquivalent: "b"
+        )
+        toggleSidebarItem.target = self
+        toggleSidebarItem.keyEquivalentModifierMask = [.command]
+        viewMenu.addItem(toggleSidebarItem)
+        viewMenuItem.submenu = viewMenu
+
         let windowMenuItem = NSMenuItem()
         mainMenu.addItem(windowMenuItem)
         let windowMenu = NSMenu(title: "窗口")
@@ -246,6 +259,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         NSApp.windowsMenu = windowMenu
 
         NSApp.mainMenu = mainMenu
+    }
+
+    /// Mirrors Codex's native Command-B shortcut. Keeping this in AppKit makes
+    /// the command reliable even while a text field inside WKWebView has focus.
+    @objc private func toggleSidebar(_ sender: Any?) {
+        guard webView != nil else { return }
+        let script = #"""
+        (() => {
+          const button = document.querySelector(
+            '[class*="_sidebarCol"] button[class*="_toggle"]'
+          );
+          if (!button) return false;
+          button.click();
+          return true;
+        })();
+        """#
+        webView.evaluateJavaScript(script) { _, error in
+            if let error {
+                NSLog("切换侧边栏失败：\(error.localizedDescription)")
+            }
+        }
     }
 
     private func startLoading() {

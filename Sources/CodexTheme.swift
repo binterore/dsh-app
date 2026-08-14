@@ -7,22 +7,22 @@ import Foundation
 /// instead of a concrete build hash.
 let codexThemeCSS = #"""
 :root {
-  --codex-canvas: #fbfbfa;
+  --codex-canvas: #ffffff;
   --codex-surface: #ffffff;
-  --codex-sidebar: #f3f3f0;
-  --codex-raised: #f7f7f5;
-  --codex-hover: rgba(28, 28, 26, 0.055);
-  --codex-active: rgba(28, 28, 26, 0.09);
-  --codex-text: #20201e;
-  --codex-text-secondary: #666660;
-  --codex-text-tertiary: #92928a;
-  --codex-border: rgba(28, 28, 26, 0.10);
-  --codex-border-subtle: rgba(28, 28, 26, 0.065);
-  --codex-control: #242421;
-  --codex-control-hover: #11110f;
+  --codex-sidebar: #fbfafa;
+  --codex-raised: #f7f7f7;
+  --codex-hover: rgba(0, 0, 0, 0.04);
+  --codex-active: rgba(0, 0, 0, 0.055);
+  --codex-text: #242424;
+  --codex-text-secondary: #686868;
+  --codex-text-tertiary: #969696;
+  --codex-border: rgba(0, 0, 0, 0.10);
+  --codex-border-subtle: rgba(0, 0, 0, 0.065);
+  --codex-control: #242424;
+  --codex-control-hover: #111111;
   --codex-control-text: #ffffff;
-  --codex-shadow: 0 1px 2px rgba(20, 20, 18, 0.04),
-                  0 10px 30px rgba(20, 20, 18, 0.055);
+  --codex-shadow: 0 1px 2px rgba(0, 0, 0, 0.04),
+                  0 10px 30px rgba(0, 0, 0, 0.055);
   --codex-font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --codex-mono-font: ui-monospace, "SFMono-Regular", "SF Mono", Menlo,
                      Consolas, "Liberation Mono", monospace;
@@ -97,7 +97,7 @@ body {
   --dsw-alias-border-l1: var(--codex-border-subtle);
   --dsw-alias-border-l2: var(--codex-border);
   --dsw-alias-border-l2-darkmode-thin: var(--codex-border-subtle);
-  --dsw-alias-border-l3: rgba(28, 28, 26, 0.16);
+  --dsw-alias-border-l3: rgba(0, 0, 0, 0.16);
   --dsw-alias-brand-primary: var(--codex-control);
   --dsw-alias-brand-text: var(--codex-text);
   --dsw-alias-button-primary-fill: var(--codex-control);
@@ -112,14 +112,14 @@ body {
   --dsw-alias-button-tool-bar-hover: var(--codex-active);
   --dsw-alias-interactive-bg-hover: var(--codex-hover);
   --dsw-alias-interactive-bg-active: var(--codex-active);
-  --dsw-alias-interactive-bg-hover-solid: #ecece8;
+  --dsw-alias-interactive-bg-hover-solid: #eeeeee;
   --dsw-alias-label-primary: var(--codex-text);
   --dsw-alias-label-primary-bluish: var(--codex-text);
   --dsw-alias-label-primary-foreground: var(--codex-control-text);
   --dsw-alias-label-secondary: var(--codex-text-secondary);
   --dsw-alias-label-tertiary: var(--codex-text-tertiary);
   --dsw-alias-label-caption: var(--codex-text-tertiary);
-  --dsw-alias-label-dimmed: #b4b4ad;
+  --dsw-alias-label-dimmed: #b4b4b4;
   --dsw-specific-input-major: var(--codex-surface);
   --dsw-specific-menu: var(--codex-surface);
   --dsw-specific-selector: var(--codex-raised);
@@ -127,11 +127,11 @@ body {
   --dsw-specific-sidebar-nav-item-active: var(--codex-active);
   --dsw-specific-sidebar-nav-item-active-accent: var(--codex-active);
   --dsw-specific-sidebar-nav-item-hover: var(--codex-hover);
-  --dsw-specific-bubble: #f1f1ee;
-  --dsw-shadow-lv1: 0 1px 2px rgba(20, 20, 18, 0.04);
+  --dsw-specific-bubble: #f2f2f2;
+  --dsw-shadow-lv1: 0 1px 2px rgba(0, 0, 0, 0.04);
   --dsw-shadow-lv2: var(--codex-shadow);
-  --dsw-shadow-lv3: 0 14px 42px rgba(20, 20, 18, 0.14),
-                    0 1px 2px rgba(20, 20, 18, 0.08);
+  --dsw-shadow-lv3: 0 14px 42px rgba(0, 0, 0, 0.14),
+                    0 1px 2px rgba(0, 0, 0, 0.08);
   color: var(--codex-text);
   font-family: var(--codex-font) !important;
   font-size: 14px;
@@ -179,12 +179,74 @@ body[data-ds-dark-theme] {
   width: 2px;
   background: var(--codex-border);
   opacity: 0;
+  pointer-events: none;
   transition: opacity 120ms ease;
 }
 
 [class*="_handle"][data-side="sidebar"]:hover::after,
 [class*="_handle"][data-side="sidebar"][data-dragging="true"]::after {
   opacity: 1;
+}
+
+/* Codex's short marks are a turn minimap, not the sidebar resize grip. Each
+   mark represents one user message and lives just inside the transcript. */
+#dsh-codex-turn-map {
+  position: fixed;
+  top: 50%;
+  z-index: 4;
+  width: 12px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+#dsh-codex-turn-map[hidden] {
+  display: none !important;
+}
+
+#dsh-codex-turn-map button {
+  position: relative;
+  display: block;
+  width: 12px;
+  height: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+#dsh-codex-turn-map button::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 3px;
+  width: 6px;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(36, 36, 36, 0.18);
+  transition: width 100ms ease, left 100ms ease, background-color 100ms ease;
+}
+
+#dsh-codex-turn-map button:hover::after,
+#dsh-codex-turn-map button:focus-visible::after {
+  left: 1px;
+  width: 10px;
+  background: rgba(36, 36, 36, 0.34);
+}
+
+#dsh-codex-turn-map button[aria-current="true"]::after {
+  background: rgba(36, 36, 36, 0.62);
+}
+
+body[data-ds-dark-theme] #dsh-codex-turn-map button::after {
+  background: rgba(239, 239, 233, 0.20);
+}
+
+body[data-ds-dark-theme]
+  #dsh-codex-turn-map button[aria-current="true"]::after {
+  background: rgba(239, 239, 233, 0.68);
 }
 
 [class*="_logoRow"] {
@@ -562,6 +624,127 @@ func makeCodexThemeInjectionScript() -> String {
         }
       };
 
+      let turnMap = null;
+      let turnMapScrollport = null;
+      let turnMapSignature = '';
+      let turnMapFrame = 0;
+
+      const userTurnAnchors = () => Array.from(document.querySelectorAll(
+        '[data-chat-flow-kind="user"][data-chat-anchor-key]'
+      )).filter((anchor) => anchor.getClientRects().length > 0);
+
+      const updateTurnMapActiveState = () => {
+        if (!turnMap || !turnMapScrollport) return;
+        const anchors = userTurnAnchors();
+        const marks = Array.from(turnMap.querySelectorAll('button'));
+        if (anchors.length === 0 || marks.length !== anchors.length) return;
+
+        const floor = Math.max(
+          0,
+          turnMapScrollport.scrollHeight - turnMapScrollport.clientHeight
+        );
+        let activeIndex = 0;
+        if (floor - turnMapScrollport.scrollTop <= 25) {
+          activeIndex = anchors.length - 1;
+        } else {
+          const viewport = turnMapScrollport.getBoundingClientRect();
+          const readingLine = viewport.top + Math.min(120, viewport.height * 0.28);
+          for (let index = 0; index < anchors.length; index += 1) {
+            if (anchors[index].getBoundingClientRect().top <= readingLine) {
+              activeIndex = index;
+            } else {
+              break;
+            }
+          }
+        }
+
+        marks.forEach((mark, index) => {
+          if (index === activeIndex) {
+            mark.setAttribute('aria-current', 'true');
+          } else {
+            mark.removeAttribute('aria-current');
+          }
+        });
+      };
+
+      const onTurnMapScroll = () => {
+        if (turnMapFrame) return;
+        turnMapFrame = requestAnimationFrame(() => {
+          turnMapFrame = 0;
+          updateTurnMapActiveState();
+        });
+      };
+
+      const rebuildTurnMap = () => {
+        const frame = document.querySelector('[class*="_frame"]');
+        const scrollport = document.querySelector('[data-conversation-scroll]');
+        if (!frame || !scrollport) {
+          if (turnMap) turnMap.hidden = true;
+          return;
+        }
+
+        if (!turnMap) {
+          turnMap = document.createElement('nav');
+          turnMap.id = 'dsh-codex-turn-map';
+          turnMap.setAttribute('aria-label', '会话导航');
+        }
+        if (turnMap.parentElement !== frame) frame.appendChild(turnMap);
+
+        if (turnMapScrollport !== scrollport) {
+          turnMapScrollport?.removeEventListener('scroll', onTurnMapScroll);
+          turnMapScrollport = scrollport;
+          turnMapScrollport.addEventListener(
+            'scroll',
+            onTurnMapScroll,
+            { passive: true }
+          );
+        }
+
+        const anchors = userTurnAnchors();
+        const signature = anchors.map(
+          (anchor) => anchor.dataset.chatAnchorKey || ''
+        ).join('|');
+        turnMap.hidden = frame.hasAttribute('data-sidebar-collapsed') ||
+          anchors.length === 0;
+
+        if (signature !== turnMapSignature) {
+          turnMapSignature = signature;
+          turnMap.replaceChildren(...anchors.map((anchor, index) => {
+            const mark = document.createElement('button');
+            mark.type = 'button';
+            mark.title = `第 ${index + 1} 条用户消息`;
+            mark.setAttribute('aria-label', mark.title);
+            mark.addEventListener('click', () => {
+              const viewport = scrollport.getBoundingClientRect();
+              const targetTop = anchor.getBoundingClientRect().top - viewport.top;
+              scrollport.scrollTo({
+                top: scrollport.scrollTop + targetTop - 24,
+                behavior: 'smooth'
+              });
+            });
+            return mark;
+          }));
+        }
+
+        const sidebarWidth = Number.parseFloat(
+          frame.dataset.codexSidebarWidth || ''
+        );
+        if (Number.isFinite(sidebarWidth)) {
+          turnMap.style.left = `${
+            frame.getBoundingClientRect().left + sidebarWidth + 10
+          }px`;
+        }
+        updateTurnMapActiveState();
+      };
+
+      const scheduleTurnMap = () => {
+        if (turnMapFrame) return;
+        turnMapFrame = requestAnimationFrame(() => {
+          turnMapFrame = 0;
+          rebuildTurnMap();
+        });
+      };
+
       // DSH's native sidebar contract is 280px by default and 264...420px while
       // dragging. Display it 24px narrower so the default matches Codex (256px)
       // without disabling the native resize interaction. React rewrites all
@@ -631,12 +814,17 @@ func makeCodexThemeInjectionScript() -> String {
             'important'
           );
         }
+
+        scheduleTurnMap();
       };
 
       const normalizeFrames = () => {
         document.querySelectorAll('[class*="_frame"]').forEach(normalizeFrame);
       };
-      const layoutObserver = new MutationObserver(normalizeFrames);
+      const layoutObserver = new MutationObserver(() => {
+        normalizeFrames();
+        scheduleTurnMap();
+      });
       layoutObserver.observe(document.documentElement, {
         childList: true,
         subtree: true,
@@ -646,6 +834,7 @@ func makeCodexThemeInjectionScript() -> String {
 
       keepThemeLast();
       normalizeFrames();
+      scheduleTurnMap();
     })();
     """#
 }

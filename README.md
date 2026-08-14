@@ -1,6 +1,7 @@
 # DeepSeek.app
 
 把 DeepSeek Harness 的 Web 聊天界面（`http://127.0.0.1:3080`）包装成 macOS 原生桌面应用。
+![Uploading image.png…]()
 
 - **零第三方依赖**：仅用系统自带的 Swift + AppKit + WebKit，无需安装任何框架
 - **独立窗口**：WKWebView 承载聊天界面，支持缩放、最小化、⌘Q/⌘C/⌘V 等原生快捷键

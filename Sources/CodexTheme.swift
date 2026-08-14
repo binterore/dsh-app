@@ -531,11 +531,24 @@ body[data-ds-dark-theme] [class*="_card"]:has(textarea:focus) {
   opacity: 0.82;
 }
 
-textarea[class*="_input"] {
-  font-family: var(--codex-font) !important;
+/*
+ * The composer renders three perfectly-overlaid text layers: the textarea
+ * owns the caret, the backdrop paints visible content, and the mirror
+ * determines the wrapped height. Keep their text metrics identical or the
+ * caret drifts away from the painted text after longer lines wrap.
+ */
+textarea[class*="_input"],
+[data-input-backdrop],
+[data-input-mirror] {
+  box-sizing: border-box !important;
+  font-family: "DshChipCell", var(--codex-font) !important;
   font-size: 14px !important;
   line-height: 21px !important;
   letter-spacing: normal !important;
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+  padding: 4px 12px 0 16px !important;
 }
 
 [class*="_add"] {

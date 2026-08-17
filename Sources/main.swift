@@ -206,7 +206,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
 
-        let rect = NSRect(x: 0, y: 0, width: 1280, height: 820)
+        // 初始尺寸按屏幕可见区域自适应（约 80% 宽 / 85% 高），
+        // 不超出屏幕、不全屏；上限 1280×820，下限不小于最小窗口尺寸。
+        let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 820)
+        let initialWidth = min(1280, max(640, visible.width * 0.8))
+        let initialHeight = min(820, max(560, visible.height * 0.85))
+        let rect = NSRect(x: 0, y: 0, width: initialWidth, height: initialHeight)
         window = NSWindow(
             contentRect: rect,
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -222,8 +227,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         // Swift reference pointing at a deallocated Objective-C object.
         window.isReleasedWhenClosed = false
         window.backgroundColor = NSColor(calibratedWhite: 0.965, alpha: 1)
-        window.center()
         window.minSize = NSSize(width: 480, height: 600)
+        // 每次启动都按当前屏幕自适应并居中（不记住上次尺寸，避免换屏后超界）。
+        window.center()
 
         let contentView = NSView(frame: .zero)
         dragView = WindowDragView(frame: .zero)

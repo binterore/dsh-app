@@ -122,28 +122,51 @@ func ensureServerRunning() {
 
 // MARK: - App
 
-/// Reserves the same top strip Codex uses as a native window drag handle.
-/// WKWebView consumes mouse events itself, so a transparent AppKit view is
-/// required for reliable dragging when the title bar is visually hidden.
+/// 占位视图：hitTest 恒为 nil，不拦截任何鼠标事件——点击、选择、滚动
+/// 全部直接交给 WKWebView。拖窗完全由 AppDelegate 的事件监视器完成：
+/// 按下后移动超过阈值（12pt）才拖窗，纯点击永远不拖，
+/// 因此按钮、输入框、链接绝对可点，页面性能也不受影响。
 final class WindowDragView: NSView {
-    override var mouseDownCanMoveWindow: Bool { true }
-
-    override func mouseDown(with event: NSEvent) {
-        window?.performDrag(with: event)
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        return nil
     }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
+    private var dragView: WindowDragView!
     private var statusItem: NSStatusItem?
     private var statusMenu: NSMenu?
     private var loadTimer: Timer?
+    private var dragMouseDownMonitor: Any?
+    private var dragDownEvent: NSEvent?
+    private var dragDownWindowPoint: NSPoint?
+    private var dragArmed = false
+
+    /// 诊断日志写文件：NSLog/os_log 在非 Apple 签名进程里会被隐私机制
+    /// 替换成 <private>，log show 看不到内容，所以拖拽探针的验证日志落到
+    /// /tmp/dsh-drag.log，方便排查。
+    private func dragLog(_ message: String) {
+        let line = "\(Date()) \(message)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        let url = URL(fileURLWithPath: "/tmp/dsh-drag.log")
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            try? handle.close()
+        } else {
+            try? data.write(to: url)
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSLog("DeepSeek.app 启动（拖拽诊断构建）")
+        dragLog("DeepSeek.app 启动（拖拽诊断构建）")
         ensureServerRunning()
         buildMenu()
         buildWindow()
+        installDragProbe()
         buildStatusItem()
         startLoading()
     }
@@ -166,6 +189,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         config.userContentController.addUserScript(
             WKUserScript(
                 source: makeCodexThemeInjectionScript(),
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+        )
+        config.userContentController.addUserScript(
+            WKUserScript(
+                source: makeDragProbeScript(),
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: true
             )
@@ -196,7 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         window.minSize = NSSize(width: 480, height: 600)
 
         let contentView = NSView(frame: .zero)
-        let dragView = WindowDragView(frame: .zero)
+        dragView = WindowDragView(frame: .zero)
         webView.translatesAutoresizingMaskIntoConstraints = false
         dragView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(webView)
@@ -209,9 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             dragView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             dragView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             dragView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            // Keep only the very top edge draggable so the compact web toolbar
-            // immediately below it remains fully interactive.
-            dragView.heightAnchor.constraint(equalToConstant: 12)
+            dragView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
         window.contentView = contentView
         window.makeKeyAndOrderFront(nil)
@@ -384,6 +412,114 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             webView.load(URLRequest(url: url))
         }
         return nil
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        dragLog("拖拽诊断: didFinish 触发")
+    }
+
+    // MARK: - 拖拽探针
+
+    /// 注入 `window.__dshDragState(el)`：判断某点属于哪类区域。
+    /// 返回 0 = 交互元素（按钮/链接/输入/可编辑）—— 永不拖窗；
+    /// 返回 2 = 纯文本 —— 仅顶部条带内可拖（保护正文文本选择）；
+    /// 返回 1 = 空白 —— 任何位置都可拖。
+    /// 注意：文本检查只记录不中断——按钮内的文本必须继续向上找到
+    /// button/role/cursor:pointer 父级并判为 0，否则条带内的按钮会被
+    /// 误判成文本而拦截点击。
+    /// 原生侧在鼠标移动时用 elementFromPoint 查询它，决定该点是否可拖窗。
+    private func makeDragProbeScript() -> String {
+        return #"""
+        (() => {
+          if (window.__dshDragState) return;
+          window.__dshDragState = (el) => {
+            let node = el;
+            let sawText = false;
+            for (let i = 0; i < 8 && node && node !== document.body && node !== document.documentElement; i += 1) {
+              const tag = (node.tagName || '').toLowerCase();
+              if (tag === 'a' || tag === 'button' || tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'label') return 0;
+              if (node.isContentEditable) return 0;
+              const role = node.getAttribute ? node.getAttribute('role') : null;
+              if (role && ['button','tab','treeitem','menuitem','link','textbox','searchbox','checkbox','switch','option','combobox','slider','radio'].includes(role)) return 0;
+              if (getComputedStyle(node).cursor === 'pointer') return 0;
+              for (const child of node.childNodes) {
+                if (child.nodeType === 3 && child.textContent.trim().length > 0) sawText = true;
+              }
+              node = node.parentElement;
+            }
+            return sawText ? 2 : 1;
+          };
+        })();
+        """#
+    }
+
+    /// 监听鼠标事件驱动拖窗：所有事件都继续分发给 webView（点击/选择/
+    /// 滚动不受影响），仅在按下后移动超过阈值时执行窗口拖动。
+    /// 不在鼠标移动时做任何探测——高频 evaluateJavaScript + getComputedStyle
+    /// 会拖慢页面主线程（按钮点击变得迟钝）；改为按下瞬间探测一次。
+    private func installDragProbe() {
+        dragMouseDownMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        ) { [weak self] event in
+            self?.handleDragMouseEvent(event)
+            return event
+        }
+    }
+
+    /// 计算鼠标事件的 CSS y 坐标（页面坐标系，从顶部往下）。
+    /// 注意：WKWebView 是 flipped 视图，`convert` 到 webView 坐标后 y 已经
+    /// 是从顶部往下的值；若再减一次高度就会上下镜像，导致探针查询错位。
+    private func dragCSSY(for event: NSEvent) -> CGFloat {
+        guard let webView else { return 0 }
+        let point = webView.convert(event.locationInWindow, from: nil)
+        if webView.isFlipped {
+            return max(0, point.y)
+        }
+        return max(0, webView.bounds.height - point.y)
+    }
+
+    /// 按下→记录并按探测结果武装拖拽；拖动→超阈值执行拖窗；抬起→复位。
+    /// 事件始终放行给页面，纯点击不受影响。
+    /// 可拖判定：空白(state=1)全窗口可拖；顶部 64pt 内文本(state=2)可拖；
+    /// 正文文本与交互元素(state=0)永不拖（保护文本选择与按钮点击）。
+    private func handleDragMouseEvent(_ event: NSEvent) {
+        guard let window, let webView else { return }
+        switch event.type {
+        case .leftMouseDown:
+            dragDownEvent = event
+            dragDownWindowPoint = event.locationInWindow
+            let cssY = dragCSSY(for: event)
+            dragArmed = false   // 等待按下点探测结果再决定
+            let js = "(function(){var el=document.elementFromPoint(\(event.locationInWindow.x), \(cssY));return el?(window.__dshDragState?window.__dshDragState(el):-1):-1})()"
+            webView.evaluateJavaScript(js) { [weak self] result, _ in
+                guard let self else { return }
+                if let number = result as? NSNumber {
+                    let state = number.intValue
+                    // state==-1 探针不可用：保守允许拖窗
+                    let armed = (state == -1) || (state == 1) || (state == 2 && cssY <= 64)
+                    self.dragArmed = armed
+                    self.dragLog("探测@DOWN: state=\(state) cssY=\(Int(cssY)) armed=\(armed)")
+                } else {
+                    self.dragArmed = true   // 探测失败：保守允许拖窗
+                }
+            }
+            dragLog("DOWN @(\(Int(event.locationInWindow.x)),\(Int(event.locationInWindow.y))) cssY=\(Int(cssY)) armed=\(dragArmed)")
+        case .leftMouseDragged:
+            guard dragArmed, let down = dragDownEvent, let p = dragDownWindowPoint else { return }
+            let dx = event.locationInWindow.x - p.x
+            let dy = event.locationInWindow.y - p.y
+            if abs(dx) + abs(dy) > 12 {   // 阈值：区分点击与拖动（含手抖余量）
+                dragArmed = false
+                dragLog("DRAG 触发拖窗 @(\(Int(event.locationInWindow.x)),\(Int(event.locationInWindow.y)))")
+                window.performDrag(with: down)
+            }
+        case .leftMouseUp:
+            dragDownEvent = nil
+            dragDownWindowPoint = nil
+            dragArmed = false
+        default:
+            break
+        }
     }
 }
 

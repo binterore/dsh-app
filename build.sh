@@ -10,6 +10,14 @@ echo "==> 清理旧构建产物"
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
+echo "==> 应用 DSH 补丁（tool 消息顺序 / 图片模型切换 / full-access schema）"
+# 补丁脚本幂等：已打过的自动跳过；打不了（DSH 未安装或版本漂移）只告警，不阻断构建。
+for patch in scripts/fix-dsh-tool-result-order.sh scripts/fix-dsh-image-model-switch.sh scripts/fix-dsh-full-access-schema.sh; do
+    if ! "$patch"; then
+        echo "⚠️  补丁失败（DSH 未安装或版本已变更？）：$patch" >&2
+    fi
+done
+
 echo "==> 编译 Swift 主程序（兼容 macOS 13.0+）"
 swiftc -O -target arm64-apple-macosx13.0 Sources/*.swift -o "$BUILD_DIR/$APP_NAME"
 

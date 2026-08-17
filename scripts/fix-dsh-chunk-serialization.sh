@@ -104,26 +104,41 @@ let text = fs.readFileSync(file, "utf8");
 const patches = {
   piAi: {
     // Root cause: a gateway may send reasoning/text deltas without a delta
-    // field. Guard every accumulation and every emitted event.
+    // field, and function_call_arguments.done without an `arguments` field.
+    // Guard every accumulation and every emitted event.
     oldMarkers: [
       "slot.block.thinking += event.delta;",
       "slot.block.text += event.delta;",
       "slot.block.partialJson += event.delta;",
       "delta: event.delta,",
       "pushToolCallDelta(slot, event.delta);",
+      "slot.block.partialJson = event.arguments;",
+      "if (event.arguments.startsWith(previousPartialJson)) {",
+      "const delta = event.arguments.slice(previousPartialJson.length);",
+      "getCustomToolCallInput(slot.block) + event.delta, false));",
     ],
     verify: (value) =>
       !value.includes("slot.block.thinking += event.delta;") &&
       !value.includes("slot.block.text += event.delta;") &&
       !value.includes("slot.block.partialJson += event.delta;") &&
       !value.includes("delta: event.delta,") &&
-      !value.includes("pushToolCallDelta(slot, event.delta);"),
+      !value.includes("pushToolCallDelta(slot, event.delta);") &&
+      !value.includes("slot.block.partialJson = event.arguments;") &&
+      !value.includes("if (event.arguments.startsWith(previousPartialJson)) {") &&
+      !value.includes("const delta = event.arguments.slice(previousPartialJson.length);") &&
+      !value.includes("getCustomToolCallInput(slot.block) + event.delta, false));"),
     apply(value) {
       value = value.split("slot.block.thinking += event.delta;").join("slot.block.thinking += event.delta ?? \"\";");
       value = value.split("slot.block.text += event.delta;").join("slot.block.text += event.delta ?? \"\";");
       value = value.split("slot.block.partialJson += event.delta;").join("slot.block.partialJson += event.delta ?? \"\";");
       value = value.split("delta: event.delta,").join("delta: event.delta ?? \"\",");
       value = value.split("pushToolCallDelta(slot, event.delta);").join("pushToolCallDelta(slot, event.delta ?? \"\");");
+      value = value.split(
+        "            const previousPartialJson = slot.block.partialJson;\n            slot.block.partialJson = event.arguments;\n            slot.block.arguments = parseStreamingJson(slot.block.partialJson);\n            if (event.arguments.startsWith(previousPartialJson)) {\n                const delta = event.arguments.slice(previousPartialJson.length);"
+      ).join(
+        "            const args = event.arguments ?? slot.block.partialJson;\n            const previousPartialJson = slot.block.partialJson;\n            slot.block.partialJson = args;\n            slot.block.arguments = parseStreamingJson(args);\n            if (args.startsWith(previousPartialJson)) {\n                const delta = args.slice(previousPartialJson.length);"
+      );
+      value = value.split("getCustomToolCallInput(slot.block) + event.delta, false));").join("getCustomToolCallInput(slot.block) + (event.delta ?? \"\"), false));");
       return value;
     },
   },

@@ -1,0 +1,20 @@
+{
+  "name": "dsh-confetti-click",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH client plugin: scatter confetti wherever you click.",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "license": "MIT"
+}

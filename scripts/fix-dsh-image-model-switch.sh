@@ -86,21 +86,43 @@ for file in "${files[@]}"; do
   fi
 done
 
-node_patch='const fs = require("fs");
+node_patch=""
+IFS= read -r -d '' node_patch <<'NODE' || true
+const fs = require("fs");
 const file = process.argv[1];
 const kind = process.env.KIND;
 const mode = process.env.MODE;
 let text = fs.readFileSync(file, "utf8");
 
+const llmImportPattern = /^import \{([^}]*)\} from (["'])@deepseek-ai\/dsh-llm\2;$/m;
+
+function hasLlmImport(value, name) {
+  const match = value.match(llmImportPattern);
+  return match !== null && match[1].split(",").some((item) => item.trim() === name);
+}
+
+function ensureLlmImport(value, name) {
+  if (hasLlmImport(value, name)) return value;
+  return value.replace(llmImportPattern, (statement, imports, quote) => {
+    return `import { ${imports.trim()}, ${name} } from ${quote}@deepseek-ai/dsh-llm${quote};`;
+  });
+}
+
 const patches = {
   piAi: {
-    oldMarkers: ["pi-ai image conversion requires the durable attachment service"],
-    verify: (value) => !value.includes("pi-ai image conversion requires the durable attachment service"),
+    oldMarkers: ["pi-ai image conversion requires the durable attachment service", "contentHasImage("],
+    verify: (value) => {
+      const usesContentHasImage = value.includes("contentHasImage(");
+      return !value.includes("pi-ai image conversion requires the durable attachment service")
+        && (!usesContentHasImage || hasLlmImport(value, "contentHasImage"));
+    },
     apply(value) {
-      return value.replace(
+      value = value.replace(
         "\t\tif (contentHasImage(message.content)) throw new LlmError(\"pi-ai image conversion requires the durable attachment service\", \"UNSUPPORTED_CONTENT\");\n\t\tif (message.role === \"system\") {",
         "\t\tif (message.role === \"system\") {"
       );
+      if (value.includes("contentHasImage(")) value = ensureLlmImport(value, "contentHasImage");
+      return value;
     },
   },
   apiProxy: {
@@ -185,7 +207,7 @@ if (mode === "state") {
   console.error(`error: unknown mode: ${mode}`);
   process.exit(2);
 }
-'
+NODE
 
 state_of() {
   local file=$1

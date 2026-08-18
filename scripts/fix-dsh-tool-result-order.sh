@@ -81,6 +81,15 @@ news=(
   $'\t\tconst toolResults = message.content.filter((block) => block.type === "tool-result");\n\t\tconst text = flattenText(message.content.filter((block) => block.type !== "tool-result"));'
 )
 
+# 上游新版（pi-ai）已用等价写法修复：改用 flattenText({ ...message, content: ... }) 而非
+# contentText(...)。语义与 news[0] 相同、字符串不同，出现即视为"已修复"，无需再打补丁。
+pi_upstream_fixed=$'\t\tconst text = flattenText({ ...message, content: message.content.filter((block) => block.type !== "tool-result") });\n\t\tconst results = message.content.filter((block) => block.type === "tool-result");'
+# 与 files 对齐的"额外已修复候选"；无额外候选的位置填空字符串。
+extras=(
+  "$pi_upstream_fixed"
+  ""
+)
+
 for file in "${files[@]}"; do
   if [[ ! -f "$file" ]]; then
     echo "error: target file does not exist: $file" >&2
@@ -92,17 +101,21 @@ state_of() {
   local file=$1
   local old=$2
   local new=$3
-  OLD="$old" NEW="$new" node - "$file" <<'NODE'
+  local extra=${4:-}
+  OLD="$old" NEW="$new" EXTRA="$extra" node - "$file" <<'NODE'
 const fs = require('fs');
 const file = process.argv[2];
 const text = fs.readFileSync(file, 'utf8');
 const count = (needle) => text.split(needle).length - 1;
 const oldCount = count(process.env.OLD);
 const newCount = count(process.env.NEW);
-if (oldCount === 1 && newCount === 0) process.stdout.write('unpatched');
-else if (oldCount === 0 && newCount === 1) process.stdout.write('patched');
+const extra = process.env.EXTRA;
+const extraCount = extra === '' || extra === void 0 ? 0 : count(extra);
+const anyFixed = newCount >= 1 || extraCount >= 1;
+if (oldCount === 1 && !anyFixed) process.stdout.write('unpatched');
+else if (oldCount === 0 && anyFixed) process.stdout.write('fixed');
 else {
-  console.error(`error: unexpected source shape in ${file} (old=${oldCount}, new=${newCount})`);
+  console.error(`error: unexpected source shape in ${file} (old=${oldCount}, new=${newCount}, extra=${extraCount})`);
   process.exit(1);
 }
 NODE
@@ -130,7 +143,7 @@ echo "DSH root: $dsh_root"
 
 unpatched=()
 for i in "${!files[@]}"; do
-  state=$(state_of "${files[$i]}" "${olds[$i]}" "${news[$i]}")
+  state=$(state_of "${files[$i]}" "${olds[$i]}" "${news[$i]}" "${extras[$i]}")
   if [[ "$state" == "unpatched" ]]; then
     unpatched+=("$i")
   fi
@@ -165,8 +178,8 @@ fi
 
 for i in "${!files[@]}"; do
   file=${files[$i]}
-  state=$(state_of "$file" "${olds[$i]}" "${news[$i]}")
-  if [[ "$state" != "patched" ]]; then
+  state=$(state_of "$file" "${olds[$i]}" "${news[$i]}" "${extras[$i]}")
+  if [[ "$state" != "fixed" ]]; then
     echo "error: post-operation verification failed: $file" >&2
     exit 1
   fi

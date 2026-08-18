@@ -67,17 +67,24 @@ if [[ -z "$dsh_root" ]]; then
 fi
 
 dsh_root=${dsh_root%/}
-files=(
-  "$dsh_root/node_modules/@deepseek-ai/dsh-tool-bash/lib/index.js"
-  "$dsh_root/node_modules/@deepseek-ai/dsh-tool-pwsh/lib/index.js"
+
+# 每个目标：文件路径 + 该文件里用于定义 escalationModes 的旧/新字符串。
+# bash/pwsh 用 const 声明；fs（edit/write 等）用 this.escalationModes 赋值。
+targets=(
+  "$dsh_root/node_modules/@deepseek-ai/dsh-tool-bash/lib/index.js|const escalationModes = defaultMode === void 0 ? [] : ESCALATION_TARGETS;|const escalationModes = defaultMode === void 0 || defaultMode === \"danger-full-access\" ? [] : ESCALATION_TARGETS;"
+  "$dsh_root/node_modules/@deepseek-ai/dsh-tool-pwsh/lib/index.js|const escalationModes = defaultMode === void 0 ? [] : ESCALATION_TARGETS;|const escalationModes = defaultMode === void 0 || defaultMode === \"danger-full-access\" ? [] : ESCALATION_TARGETS;"
+  "$dsh_root/node_modules/@deepseek-ai/dsh-tool-fs/lib/index.js|this.escalationModes = defaultMode === void 0 ? [] : ESCALATION_TARGETS;|this.escalationModes = defaultMode === void 0 || defaultMode === \"danger-full-access\" ? [] : ESCALATION_TARGETS;"
 )
-old='const escalationModes = defaultMode === void 0 ? [] : ESCALATION_TARGETS;'
-new='const escalationModes = defaultMode === void 0 || defaultMode === "danger-full-access" ? [] : ESCALATION_TARGETS;'
 
 echo "DSH root: $dsh_root"
 
 unpatched=()
-for file in "${files[@]}"; do
+for target in "${targets[@]}"; do
+  file=${target%%|*}
+  rest=${target#*|}
+  old=${rest%%|*}
+  new=${rest#*|}
+
   if [[ ! -f "$file" ]]; then
     echo "error: target file does not exist: $file" >&2
     exit 1
@@ -99,22 +106,26 @@ else {
 NODE
   )
   if [[ "$state" == "unpatched" ]]; then
-    unpatched+=("$file")
+    unpatched+=("$file|$old|$new")
   fi
 done
 
 if $check_only; then
   if ((${#unpatched[@]})); then
-    for file in "${unpatched[@]}"; do
-      echo "unpatched: $file" >&2
+    for target in "${unpatched[@]}"; do
+      echo "unpatched: ${target%%|*}" >&2
     done
     exit 1
   fi
-  echo "Both targets are patched."
+  echo "All targets are patched."
 else
   if ((${#unpatched[@]})); then
     timestamp=$(date '+%Y%m%d-%H%M%S')
-    for file in "${unpatched[@]}"; do
+    for target in "${unpatched[@]}"; do
+      file=${target%%|*}
+      rest=${target#*|}
+      old=${rest%%|*}
+      new=${rest#*|}
       if $make_backup; then
         backup="$file.bak.$timestamp"
         cp -p -- "$file" "$backup"
@@ -135,11 +146,15 @@ NODE
       echo "Patched: $file"
     done
   else
-    echo "Both targets were already patched; no changes made."
+    echo "All targets were already patched; no changes made."
   fi
 fi
 
-for file in "${files[@]}"; do
+for target in "${targets[@]}"; do
+  file=${target%%|*}
+  rest=${target#*|}
+  old=${rest%%|*}
+  new=${rest#*|}
   OLD="$old" NEW="$new" node - "$file" <<'NODE'
 const fs = require('fs');
 const file = process.argv[2];
@@ -153,7 +168,7 @@ NODE
   node --check "$file"
 done
 
-echo "Verification passed for both targets."
+echo "Verification passed for all targets."
 if ! $check_only && ((${#unpatched[@]})); then
   echo "Restart DSH for the patched schema to take effect."
 fi

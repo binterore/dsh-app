@@ -1,49 +1,109 @@
 #!/usr/bin/env bash
-# 构建 DeepSeek.app —— 零第三方依赖的 macOS 原生桌面壳
 set -euo pipefail
 cd "$(dirname "$0")"
 
 APP_NAME="DeepSeek"
-BUILD_DIR="build"
+BUILD_DIR="${BUILD_DIR:-build}"
+CONFIGURATION="${CONFIGURATION:-release}"
+BUILD_ARCHS="${BUILD_ARCHS:-arm64}"
+BUNDLE_DSH_RUNTIME="${BUNDLE_DSH_RUNTIME:-1}"
+MARKETING_VERSION="${MARKETING_VERSION:-2.0.0}"
+BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 20000)}"
+SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://raw.githubusercontent.com/binterore/dsh-app/main/appcast.xml}"
+SPARKLE_PUBLIC_KEY="${SPARKLE_PUBLIC_KEY:-REPLACE_WITH_SPARKLE_ED25519_PUBLIC_KEY}"
 
-echo "==> 清理旧构建产物"
+case "$BUILD_DIR" in
+  ""|"/"|"$HOME")
+    echo "Refusing unsafe BUILD_DIR: $BUILD_DIR" >&2
+    exit 1
+    ;;
+esac
+
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
-echo "==> 应用 DSH 补丁（tool 消息顺序 / 图片模型切换 / full-access schema）"
-# 补丁脚本幂等：已打过的自动跳过；打不了（DSH 未安装或版本漂移）只告警，不阻断构建。
-for patch in scripts/fix-dsh-tool-result-order.sh scripts/fix-dsh-image-model-switch.sh scripts/fix-dsh-full-access-schema.sh; do
-    if ! "$patch"; then
-        echo "⚠️  补丁失败（DSH 未安装或版本已变更？）：$patch" >&2
-    fi
+SWIFT_ARGS=(--configuration "$CONFIGURATION")
+for arch in $BUILD_ARCHS; do
+  SWIFT_ARGS+=(--arch "$arch")
 done
 
-echo "==> 编译 Swift 主程序（兼容 macOS 13.0+）"
-swiftc -O -target arm64-apple-macosx13.0 Sources/*.swift -o "$BUILD_DIR/$APP_NAME"
+echo "==> 构建 SwiftPM App（${CONFIGURATION} / ${BUILD_ARCHS}）"
+swift build "${SWIFT_ARGS[@]}"
+BIN_DIR="$(swift build "${SWIFT_ARGS[@]}" --show-bin-path)"
 
-echo "==> 生成图标（裁掉透明留白，多尺寸 iconset → icns）"
+echo "==> 生成应用图标"
 ICONSET="$BUILD_DIR/AppIcon.iconset"
 ICON_SOURCE="$BUILD_DIR/AppIcon-source.png"
 mkdir -p "$ICONSET"
-# 原图主体仅占 880×649 px；先把 1024 px 透明画布居中裁成 880 px，
-# 避免 macOS 再按整张画布缩放后，Dock 中的鲸鱼明显小于相邻图标。
 sips -c 880 880 Assets/whale.png --out "$ICON_SOURCE" >/dev/null
-for s in 16 32 128 256 512; do
-    sips -z $s $s "$ICON_SOURCE" --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
-    s2=$((s * 2))
-    sips -z $s2 $s2 "$ICON_SOURCE" --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
+for size in 16 32 128 256 512; do
+  sips -z "$size" "$size" "$ICON_SOURCE" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+  retina=$((size * 2))
+  sips -z "$retina" "$retina" "$ICON_SOURCE" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
 done
 iconutil -c icns "$ICONSET" -o "$BUILD_DIR/AppIcon.icns"
 
-echo "==> 组装 .app 包"
 APP="$BUILD_DIR/$APP_NAME.app"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BUILD_DIR/$APP_NAME" "$APP/Contents/MacOS/$APP_NAME"
-cp Info.plist "$APP/Contents/Info.plist"
-cp "$BUILD_DIR/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+CONTENTS="$APP/Contents"
+mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$CONTENTS/Frameworks"
+cp "$BIN_DIR/DeepSeek" "$CONTENTS/MacOS/$APP_NAME"
+if ! otool -l "$CONTENTS/MacOS/$APP_NAME" | grep -q '@executable_path/../Frameworks'; then
+  install_name_tool -add_rpath '@executable_path/../Frameworks' "$CONTENTS/MacOS/$APP_NAME"
+fi
+cp "$BUILD_DIR/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
+cp Info.plist "$CONTENTS/Info.plist"
 
-echo "==> 代码签名（ad-hoc）"
-codesign --force --deep --sign - "$APP"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $MARKETING_VERSION" "$CONTENTS/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$CONTENTS/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :SUFeedURL $SPARKLE_FEED_URL" "$CONTENTS/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $SPARKLE_PUBLIC_KEY" "$CONTENTS/Info.plist"
 
-echo "==> 完成：$APP"
-echo "安装：cp -R \"$APP\" ~/Applications/"
+if [[ -d "$BIN_DIR/Sparkle.framework" ]]; then
+  echo "==> 嵌入 Sparkle.framework"
+  ditto "$BIN_DIR/Sparkle.framework" "$CONTENTS/Frameworks/Sparkle.framework"
+else
+  echo "Sparkle.framework not found in $BIN_DIR" >&2
+  exit 1
+fi
+
+if [[ "$BUNDLE_DSH_RUNTIME" == "1" ]]; then
+  echo "==> 安装固定 DSH 运行时 0.1.0-rc.7"
+  RUNTIME_BUILD="$BUILD_DIR/dsh-runtime"
+  mkdir -p "$RUNTIME_BUILD"
+  cp Runtime/package.json Runtime/package-lock.json "$RUNTIME_BUILD/"
+  npm ci --prefix "$RUNTIME_BUILD" --omit=dev --ignore-scripts --offline 2>/dev/null || \
+    npm ci --prefix "$RUNTIME_BUILD" --omit=dev --ignore-scripts
+
+  runtime_real="$(cd "$RUNTIME_BUILD" && pwd -P)"
+  build_real="$(cd "$BUILD_DIR" && pwd -P)"
+  if [[ "$runtime_real" != "$build_real"/* ]]; then
+    echo "Refusing to patch runtime outside build directory: $runtime_real" >&2
+    exit 1
+  fi
+  for patch in \
+    scripts/fix-dsh-tool-result-order.sh \
+    scripts/fix-dsh-image-model-switch.sh \
+    scripts/fix-dsh-full-access-schema.sh \
+    scripts/fix-dsh-chunk-serialization.sh; do
+    "$patch" --dsh-root "$runtime_real" --no-backup
+  done
+  ditto "$RUNTIME_BUILD" "$CONTENTS/Resources/dsh-runtime"
+else
+  echo "==> 跳过内置 DSH；开发构建会使用固定版本 npx fallback"
+fi
+
+echo "==> 签名应用"
+SIGN_ARGS=(--force --deep --sign "$SIGN_IDENTITY" --entitlements DeepSeek.entitlements)
+if [[ "$SIGN_IDENTITY" != "-" ]]; then
+  SIGN_ARGS+=(--options runtime --timestamp)
+fi
+codesign "${SIGN_ARGS[@]}" "$APP"
+codesign --verify --deep --strict --verbose=2 "$APP"
+
+echo "==> 生成 DMG"
+DMG="$BUILD_DIR/DeepSeek-$MARKETING_VERSION.dmg"
+hdiutil create -volname "DeepSeek Desktop" -srcfolder "$APP" -ov -format UDZO "$DMG" >/dev/null
+
+echo "Build complete: $APP"
+echo "DMG: $DMG"

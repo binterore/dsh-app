@@ -1,67 +1,78 @@
-# DeepSeek.app
+# DeepSeek Desktop
 
-把 DeepSeek Harness 的 Web 聊天界面（`http://127.0.0.1:3080`）包装成 macOS 原生桌面应用。
+面向 DeepSeek Harness 的原生 macOS 工作台。界面采用 Codex Desktop 的工作方式：会话位于中央，环境信息独立显示在右侧，变更审查是单独面板，终端是可调整高度的底部抽屉。
 
-![DeepSeek 桌面应用截图](Assets/screenshot.jpg)
+![DeepSeek Desktop](Assets/screenshot.jpg)
 
-- **零第三方依赖**：仅用系统自带的 Swift + AppKit + WebKit，无需安装任何框架
-- **独立窗口**：WKWebView 承载聊天界面，支持缩放、最小化、⌘Q/⌘C/⌘V 等原生快捷键
-- **自动拉起服务**：启动时检测 3080 端口，若 `dsh web` 未运行则自动后台拉起
-- **服务与 App 解耦**：关闭 App 窗口不会杀掉后台服务，浏览器里 3080 仍可访问
+## 已实现
 
-## 环境要求
+- 原生 AppKit 窗口、工具栏、菜单、快捷键、状态栏与系统通知
+- 工作区持久化、隔离任务/worktree、最近任务和归档任务
+- 受管 DSH 服务：固定 `0.1.0-rc.7`、随机本机端口、健康检查、崩溃重启和进程身份校验
+- Codex 风格的 DSH 页面主题、工作区切换、权限/模型入口与输入框聚焦
+- 独立 Git 变更审查：Diff、暂存、取消暂存、放弃更改和提交
+- 底部 PTY 终端：持久 shell、工作目录绑定、`⌃C` 和可滚动输出
+- 右侧环境信息：变更行数、运行位置、分支和提交入口
+- Sparkle 自动更新、签名、DMG、CI 与 GitHub Release 工作流
+- DSH 运行时可随 App 打包，用户无需单独安装 Harness
 
-- macOS 13.0+
-- Xcode Command Line Tools（`xcode-select --install`）
-- 已安装 [DeepSeek Harness](https://github.com/deepseek-ai)（提供 `dsh web`，监听 3080）
+## 快捷键
 
-## 构建
+| 快捷键 | 功能 |
+| --- | --- |
+| `⌘B` | 切换会话侧栏 |
+| `⌘⇧R` | 切换变更审查 |
+| `⌘J` | 切换底部终端 |
+| `⌘⇧I` | 切换右侧环境信息 |
+| `⌘L` | 聚焦会话输入框 |
+
+## 本地构建
+
+要求 macOS 13+、Swift 6/Xcode Command Line Tools、Node.js 与 npm。
 
 ```bash
+./scripts/test.sh
 ./build.sh
 ```
 
-产物在 `build/DeepSeek.app`。
+产物：
 
-## 安装
+- `build/DeepSeek.app`
+- `build/DeepSeek-2.0.0.dmg`
+
+`./build.sh` 默认把固定版本 DSH 运行时嵌入 App。需要快速调试原生 UI 时可跳过运行时安装：
 
 ```bash
-cp -R build/DeepSeek.app ~/Applications/
+BUNDLE_DSH_RUNTIME=0 ./build.sh
 ```
 
-然后从启动台 / Finder 双击运行，或拖入 Dock 固定。
+## 服务解析顺序
 
-## 运行原理
+App 启动时只管理自己创建的 DSH 进程，不占用固定端口，也不会终止用户已有的服务。运行时按以下顺序解析：
 
-1. 启动时用 Network framework 探测 `127.0.0.1:3080` 是否监听。
-2. 若未监听，按以下优先级拉起 `dsh web`：
-   - `DSH_BIN` / `DSH_NODE` 环境变量指定的 `dsh`、`node`
-   - Homebrew / 系统路径中的 `node` + `dsh`
-   - 兜底 `npx @deepseek-ai/dsh web`
-3. 轮询等待端口就绪（最多 20 秒），然后加载 `http://127.0.0.1:3080`。
+1. App 内嵌运行时
+2. `DSH_BIN` / `DSH_NODE` / `DSH_NPX` 显式配置
+3. 已验证的本机 npm/npx 缓存或安装
+4. 固定版本的 `npx` fallback
 
-## 环境变量（可选）
+服务仅监听 `127.0.0.1` 的随机端口，并绑定到当前工作区。
 
-| 变量 | 作用 |
-|------|------|
-| `DSH_BIN` | 指定 `dsh` 可执行文件路径 |
-| `DSH_NODE` | 指定 `node` 可执行文件路径 |
-| `DSH_NPX` | 指定 `npx` 可执行文件路径 |
+## 发布
 
-## 目录结构
+正式发布前需要配置 Sparkle Ed25519 公钥、Developer ID 签名身份和 notarization 凭据；仓库内的 `SUPublicEDKey` 当前是占位值。发布脚本：
+
+```bash
+SIGN_IDENTITY="Developer ID Application: ..." \
+SPARKLE_PUBLIC_KEY="..." \
+./scripts/release.sh
+```
+
+## 主要目录
 
 ```text
-.
-├── build.sh          # 一键构建脚本
-├── Info.plist        # App 配置
-├── Assets/
-│   └── whale.png     # 应用图标（1024px）
-└── Sources/
-    └── main.swift    # Swift 主程序
+Sources/       AppKit、WebKit、Git、终端与 DSH 服务代码
+Runtime/       固定 DSH 运行时依赖锁
+Tests/         核心逻辑与 PTY 终端冒烟测试
+scripts/       测试、发布及受控 DSH 补丁
+.github/       CI 和 Release 工作流
 ```
-
-## 已知限制
-
-- App 本身不含 DeepSeek Harness，需先安装并确保 `dsh web` 可运行。
-- 服务默认只监听 `127.0.0.1`，App 仅在访问本机服务，不对外暴露。
-- 图标取自 DeepSeek 官方鲸鱼 logo（蓝色版转黑色），版权归 DeepSeek 所有。

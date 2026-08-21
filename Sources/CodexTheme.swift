@@ -7,22 +7,24 @@ import Foundation
 /// instead of a concrete build hash.
 let codexThemeCSS = #"""
 :root {
-  --codex-canvas: #ffffff;
-  --codex-surface: #ffffff;
-  --codex-sidebar: #fbfafa;
-  --codex-raised: #f7f7f7;
-  --codex-hover: rgba(0, 0, 0, 0.04);
-  --codex-active: rgba(0, 0, 0, 0.055);
-  --codex-text: #242424;
-  --codex-text-secondary: #686868;
-  --codex-text-tertiary: #969696;
-  --codex-border: rgba(0, 0, 0, 0.10);
-  --codex-border-subtle: rgba(0, 0, 0, 0.065);
-  --codex-control: #242424;
-  --codex-control-hover: #111111;
+  /* Measured from the Codex desktop app light theme. */
+  --codex-canvas: #f7f9fc;
+  --codex-surface: #f8f9fb;
+  --codex-sidebar: #eff0f1;
+  --codex-raised: #e7e8e8;
+  --codex-hover: rgba(17, 23, 37, 0.055);
+  --codex-active: rgba(17, 23, 37, 0.085);
+  --codex-text: #111725;
+  --codex-text-secondary: #6c717b;
+  --codex-text-tertiary: #90939b;
+  --codex-border: #e2e5e9;
+  --codex-border-subtle: #e9ecf0;
+  --codex-control: #111725;
+  --codex-control-hover: #000000;
   --codex-control-text: #ffffff;
-  --codex-shadow: 0 1px 2px rgba(0, 0, 0, 0.04),
-                  0 10px 30px rgba(0, 0, 0, 0.055);
+  --codex-focus-ring: rgba(17, 23, 37, 0.28);
+  --codex-shadow: 0 1px 2px rgba(17, 23, 37, 0.03),
+                  0 8px 24px rgba(17, 23, 37, 0.035);
   --codex-font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --codex-mono-font: ui-monospace, "SFMono-Regular", "SF Mono", Menlo,
                      Consolas, "Liberation Mono", monospace;
@@ -153,6 +155,7 @@ body[data-ds-dark-theme] {
   --codex-control: #efefe9;
   --codex-control-hover: #ffffff;
   --codex-control-text: #181816;
+  --codex-focus-ring: rgba(255, 255, 248, 0.32);
   --codex-shadow: 0 1px 2px rgba(0, 0, 0, 0.25),
                   0 16px 36px rgba(0, 0, 0, 0.22);
   --dsw-alias-button-primary-dimmed: #51514d;
@@ -254,16 +257,26 @@ body[data-ds-dark-theme]
   padding-top: 28px !important;
 }
 
-[class*="_brand"] {
-  transform: scale(0.92);
-  transform-origin: left center;
-}
-
 /* Codex uses the panel glyph as the first rail control. DSH normally swaps it
    for the fish mark until hover, which makes the collapsed state look branded
    instead of actionable. */
 [class*="_frame"][data-sidebar-collapsed] [class*="_railFish"] {
   display: none !important;
+}
+
+/* The macOS titlebar owns the one sidebar toggle, as Codex does. Keeping a
+   second control inside the web canvas makes the shell feel nested. */
+button[aria-label="收起侧边栏"],
+button[aria-label="打开侧边栏"],
+button[aria-label="Collapse sidebar"],
+button[aria-label="Open sidebar"] {
+  display: none !important;
+}
+
+[class*="_frame"][data-sidebar-collapsed] > [class*="_sidebarCol"],
+[class*="_frame"][data-sidebar-collapsed] > [class*="_handle"][data-side="sidebar"] {
+  border: 0 !important;
+  visibility: hidden !important;
 }
 
 [class*="_frame"][data-sidebar-collapsed]
@@ -400,7 +413,7 @@ header[class*="_header"]::after {
   background: var(--codex-border-subtle) !important;
 }
 
-header[class*="_header"] [role="tablist"] {
+header[class*="_header"] [class*="_tabs"] {
   order: 1;
   align-self: stretch;
   align-items: center;
@@ -410,13 +423,21 @@ header[class*="_header"] [role="tablist"] {
   border: 0 !important;
 }
 
-header[class*="_header"] [role="tab"] {
+header[class*="_header"] button[class*="_tab"] {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   height: 46px;
   padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
   color: var(--codex-text-tertiary) !important;
   font-size: 13px !important;
+  transition: color 120ms ease;
+}
+
+header[class*="_header"] button[class*="_tab"]:hover {
+  color: var(--codex-text-secondary) !important;
 }
 
 header[class*="_header"] [class*="_titleRow"] {
@@ -438,11 +459,23 @@ header[class*="_header"] [class*="_headerUtilities"] {
   margin-left: 8px !important;
 }
 
-header[class*="_header"] [role="tab"][aria-selected="true"] {
+/* Codex keeps the header to a breadcrumb and session actions; the DSH
+   conversation/trajectory tabs and agent-preset chip are hidden to match. */
+header[class*="_header"] [class*="_tabs"] {
+  display: none !important;
+}
+
+header[class*="_header"]
+  [data-slot="conversation.session.header.actions"]
+  > span {
+  display: none !important;
+}
+
+header[class*="_header"] button[class*="_tabActive"] {
   color: var(--codex-text) !important;
 }
 
-header[class*="_header"] [role="tab"][aria-selected="true"]::after {
+header[class*="_header"] button[class*="_tabActive"]::after {
   height: 2px !important;
   border-radius: 999px 999px 0 0;
   background: var(--codex-text) !important;
@@ -489,14 +522,7 @@ header[class*="_header"] [class*="_sessionLogButton"]:hover {
 }
 
 [class*="_previewBadge"] {
-  height: 20px !important;
-  padding: 0 7px !important;
-  border: 1px solid var(--codex-border-subtle);
-  border-radius: 999px !important;
-  background: var(--codex-raised) !important;
-  color: var(--codex-text-tertiary) !important;
-  font-size: 10px !important;
-  font-weight: 500;
+  display: none !important;
 }
 
 [class*="_workspace"],
@@ -517,9 +543,9 @@ header[class*="_header"] [class*="_sessionLogButton"]:hover {
 }
 
 [class*="_card"]:has(textarea:focus) {
-  border-color: rgba(28, 28, 26, 0.18) !important;
-  box-shadow: 0 1px 2px rgba(20, 20, 18, 0.04),
-              0 14px 38px rgba(20, 20, 18, 0.075) !important;
+  border-color: var(--codex-border) !important;
+  box-shadow: 0 1px 2px rgba(17, 23, 37, 0.04),
+              0 14px 38px rgba(17, 23, 37, 0.07) !important;
 }
 
 body[data-ds-dark-theme] [class*="_card"]:has(textarea:focus) {
@@ -576,6 +602,56 @@ textarea[class*="_input"],
   opacity: 0.65;
 }
 
+/*
+ * Conversation disclosures. DSH renders tool calls and reasoning as
+ * expandable rows with their own brand treatment; Codex collapses them into
+ * the same quiet card language, so neutralise them here.
+ */
+[class*="_root"][data-variant][data-expandable],
+[class*="_root"][data-variant] [data-disclosure-row="true"] {
+  background: var(--codex-raised) !important;
+  border: 1px solid var(--codex-border-subtle) !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+[class*="_root"][data-variant][data-expandable]:hover,
+[class*="_root"][data-variant] [data-disclosure-row="true"]:hover {
+  background: var(--codex-hover) !important;
+  border-color: var(--codex-border) !important;
+}
+
+[class*="_root"][data-variant] [class*="_leading"],
+[class*="_root"][data-variant] [class*="_iconIdle"],
+[class*="_root"][data-variant] [class*="_chevron"] {
+  color: var(--codex-text-secondary) !important;
+}
+
+[class*="_root"][data-variant] [class*="_title"],
+[class*="_root"][data-variant] [class*="_summary"],
+[class*="_root"][data-variant] [class*="_ioLabel"] {
+  font-size: 12.5px !important;
+  color: var(--codex-text) !important;
+}
+
+[class*="_root"][data-variant] [class*="_errorSummary"] {
+  color: var(--codex-text-secondary) !important;
+  font-size: 12px !important;
+}
+
+/*
+ * Codex keeps interactive focus on the web canvas quiet: a thin neutral ring
+ * instead of the brand-coloured default.
+ */
+button:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--codex-focus-ring) !important;
+  outline-offset: -2px;
+}
+
 /* Details and menus use the same thin separators as the Codex desktop app. */
 [class*="_detailsCol"] {
   background: var(--codex-surface) !important;
@@ -619,6 +695,24 @@ func makeCodexThemeInjectionScript() -> String {
 
     return #"""
     (() => {
+      // The desktop shell is intentionally calm. User-installed novelty
+      // plugins remain available to the regular DSH client but are excluded
+      // here before the boot manifest is consumed.
+      if (!Object.getOwnPropertyDescriptor(window, '__DSH_BOOT__')) {
+        let desktopBoot;
+        Object.defineProperty(window, '__DSH_BOOT__', {
+          configurable: true,
+          get: () => desktopBoot,
+          set: (value) => {
+            if (value && Array.isArray(value.entries)) {
+              value.entries = value.entries.filter(
+                (entry) => entry?.id !== 'dsh-confetti-click'
+              );
+            }
+            desktopBoot = value;
+          }
+        });
+      }
       if (document.getElementById('dsh-codex-theme')) return;
       const style = document.createElement('style');
       style.id = 'dsh-codex-theme';
@@ -764,11 +858,12 @@ func makeCodexThemeInjectionScript() -> String {
         });
       };
 
-      // DSH's native sidebar contract is 280px by default and 264...420px while
-      // dragging. Display it 24px narrower so the default matches Codex (256px)
-      // without disabling the native resize interaction. React rewrites all
-      // three inline widths on each drag frame, so retain the native value in a
-      // data attribute and keep the grid, root, and handle synchronized.
+      // DSH's native sidebar contract is 280px by default and 264...420px
+      // while dragging. Display it 14px wider so the default matches Codex
+      // (measured 294px) without disabling the native resize interaction.
+      // React rewrites all three inline widths on each drag frame, so retain
+      // the native value in a data attribute and keep the grid, root, and
+      // handle synchronized.
       const normalizeFrame = (frame) => {
         const sidebarCol = frame.querySelector(':scope > [class*="_sidebarCol"]');
         const centerCol = frame.querySelector(':scope > [class*="_centerCol"]');
@@ -791,8 +886,8 @@ func makeCodexThemeInjectionScript() -> String {
         if (!Number.isFinite(nativeWidth)) nativeWidth = 280;
 
         const sidebarWidth = collapsed
-          ? 56
-          : Math.max(240, Math.min(396, nativeWidth - 24));
+          ? 0
+          : Math.max(240, Math.min(396, nativeWidth + 14));
         frame.dataset.codexNativeSidebarWidth = `${nativeWidth}`;
         frame.dataset.codexSidebarWidth = `${sidebarWidth}`;
 
@@ -834,11 +929,79 @@ func makeCodexThemeInjectionScript() -> String {
           );
         }
 
+        // Tell the native terminal drawer where the conversation content
+        // actually sits (sidebar width + the centered content card bounds) so
+        // the terminal docks under the conversation column only.
+        const contentCard = document.querySelector(
+          '[class*="_card"]:has(textarea)'
+        ) || document.querySelector('[class*="_composerSeat"]');
+        const frameRect = frame.getBoundingClientRect();
+        const cardRect = contentCard?.getBoundingClientRect();
+        const contentLeft = cardRect
+          ? cardRect.left - frameRect.left
+          : sidebarWidth;
+        const contentWidth = cardRect ? cardRect.width : 0;
+        const layoutSignature = `${sidebarWidth}|${contentLeft}|${contentWidth}`;
+        if (frame.dataset.codexLayoutPosted !== layoutSignature) {
+          frame.dataset.codexLayoutPosted = layoutSignature;
+          if (window.webkit?.messageHandlers?.dshLayout) {
+            try {
+              window.webkit.messageHandlers.dshLayout.postMessage({
+                sidebarWidth,
+                contentLeft,
+                contentWidth
+              });
+            } catch {}
+          }
+        }
+
         scheduleTurnMap();
+      };
+
+      const normalizeCopy = () => {
+        // Brand: drop the DSH "HARNESS" suffix so the sidebar reads the same
+        // way the Codex brand row does ("DeepSeek" instead of
+        // "DeepSeek HARNESS").
+        document.querySelectorAll('span,small').forEach((node) => {
+          const text = node.textContent?.trim() || '';
+          if (text === 'HARNESS') {
+            node.hidden = true;
+          } else if (/^DeepSeek\s*HARNESS$/i.test(text)) {
+            node.textContent = 'DeepSeek';
+          }
+        });
+        const logoRow = document.querySelector('[class*="_logoRow"]');
+        if (logoRow) {
+          for (const node of logoRow.querySelectorAll('*')) {
+            if (node.childElementCount === 0 &&
+                /^DeepSeek\s*HARNESS$/i.test(node.textContent?.trim() || '')) {
+              node.textContent = 'DeepSeek';
+            }
+          }
+        }
+        // Hero headline: match Codex's empty-state copy.
+        const headline = document.querySelector('[class*="_headlineText"]');
+        if (headline &&
+            /探索未至之境|explor(e|ing) the unknown/i.test(
+              headline.textContent?.trim() || ''
+            )) {
+          headline.textContent = '你想构建什么？';
+        }
+        // Composer placeholder: match Codex's composer hint.
+        const textarea = document.querySelector(
+          'textarea[class*="_input"]'
+        ) || document.querySelector('textarea');
+        if (textarea &&
+            /描述你想要构建的内容/i.test(
+              textarea.getAttribute('placeholder') || ''
+            )) {
+          textarea.setAttribute('placeholder', '随心输入');
+        }
       };
 
       const normalizeFrames = () => {
         document.querySelectorAll('[class*="_frame"]').forEach(normalizeFrame);
+        normalizeCopy();
       };
       const layoutObserver = new MutationObserver(() => {
         normalizeFrames();
@@ -848,7 +1011,11 @@ func makeCodexThemeInjectionScript() -> String {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ['style', 'data-sidebar-collapsed']
+        attributeFilter: [
+          'style',
+          'data-sidebar-collapsed',
+          'placeholder'
+        ]
       });
 
       keepThemeLast();

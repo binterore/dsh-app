@@ -3,15 +3,15 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>DeepSeek</string>
+    <string>DeepSeek Desktop</string>
     <key>CFBundleDisplayName</key>
-    <string>DeepSeek</string>
+    <string>DeepSeek Desktop</string>
     <key>CFBundleIdentifier</key>
-    <string>com.deepseek.chat</string>
+    <string>com.binterore.deepseek-desktop</string>
     <key>CFBundleVersion</key>
-    <string>1.0.0</string>
+    <string>20000</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>2.0.0</string>
     <key>CFBundleExecutable</key>
     <string>DeepSeek</string>
     <key>CFBundlePackageType</key>
@@ -29,5 +29,26 @@
         <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.developer-tools</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>DeepSeek Desktop Workspace</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>deepseek-desktop</string>
+            </array>
+        </dict>
+    </array>
+    <key>SUFeedURL</key>
+    <string>https://raw.githubusercontent.com/binterore/dsh-app/main/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>REPLACE_WITH_SPARKLE_ED25519_PUBLIC_KEY</string>
+    <key>SUEnableInstallerLauncherService</key>
+    <true/>
+    <key>SUAutomaticallyUpdate</key>
+    <true/>
 </dict>
 </plist>

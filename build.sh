@@ -85,7 +85,8 @@ if [[ "$BUNDLE_DSH_RUNTIME" == "1" ]]; then
     scripts/fix-dsh-tool-result-order.sh \
     scripts/fix-dsh-image-model-switch.sh \
     scripts/fix-dsh-full-access-schema.sh \
-    scripts/fix-dsh-chunk-serialization.sh; do
+    scripts/fix-dsh-chunk-serialization.sh \
+    scripts/fix-dsh-pi-ai-content-text.sh; do
     "$patch" --dsh-root "$runtime_real" --no-backup
   done
   ditto "$RUNTIME_BUILD" "$CONTENTS/Resources/dsh-runtime"
